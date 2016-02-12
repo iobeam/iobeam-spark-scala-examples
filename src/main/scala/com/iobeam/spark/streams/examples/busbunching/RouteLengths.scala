@@ -305,7 +305,7 @@ object RouteLengths {
         "MTABC_QM8" -> 39321.8808204)
 
 
-    def getRouteLength(route: String, direction: Int): Double = {
+    def getRouteLength(route: String): Double = {
         ROUTE_MAP.getOrElse(route, 0.0)
     }
 }

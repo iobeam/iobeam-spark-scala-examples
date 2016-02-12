@@ -2,13 +2,9 @@ package com.iobeam.spark.streams.examples.busbunching
 
 import scala.collection.mutable.ListBuffer
 
-import com.iobeam.spark.streams.SparkApp
-import com.iobeam.spark.streams.config.DeviceConfig
+import com.iobeam.spark.streams.{IobeamInterface, SparkApp}
 import com.iobeam.spark.streams.model.{TimeSeriesStreamPartitioned, TimeRecord, OutputStreams}
 import org.apache.spark.streaming.Duration
-import org.apache.spark.streaming.dstream.DStream
-import RouteLengths.getRouteLength
-
 
 /**
  * BusBunching Spark Streaming app
@@ -41,19 +37,21 @@ object BusBunching {
     val PROGRESS = "progress"
 }
 
-class BusBunching() extends SparkApp("BusBunching") {
+class BusBunching extends SparkApp("BusBunching") {
 
-    override def processStream(stream: DStream[(String, (TimeRecord, DeviceConfig))]):
+    override def processStream(iobeamInterface: IobeamInterface):
     OutputStreams = {
+        iobeamInterface.getLogger.info("Setting up busbunching with iobeam interface class")
 
-        val s = stream.mapValues(a => (new BusPosition(a._1), a._2))
+        val stream = iobeamInterface.getInputStreamBySource
+        val s = stream.mapValues(a => new BusPosition(a))
 
         // Streams of data arrive belonging to individual devices (buses).
         // We collect readings in a time window and take the first reading of each bus.
         val readings = s.map(positionsByBus)
             .groupByKeyAndWindow(Duration(BusBunching.WINDOW_LENGTH_MS), Duration(BusBunching
                 .WINDOW_SLIDE_DURATION_MS))
-            .mapValues(a => a.toList.sortWith(_._1.time < _._1.time)).mapValues(a => a.head)
+            .mapValues(a => a.toList.sortWith(_.time < _.time)).mapValues(a => a.head)
 
         // We then collect a window of readings and group them by route and direction. It ensures
         // that all readings from a route ends up in the same place which is needed when bunching is
@@ -65,23 +63,22 @@ class BusBunching() extends SparkApp("BusBunching") {
         val bunchingLevels = windowedReadingsByRouteAndId
             .flatMapValues(getRouteBunchingLevel)
 
-        val badBunchingLevels = bunchingLevels.filter(a => a._2._1.value < 1.0)
+        val badBunchingLevels = bunchingLevels.filter(a => a._2.value < 1.0)
 
         // Calculate the geoSmoothed bunching
         val geoSmoothedBunching = badBunchingLevels
             .flatMap(dataToMultipleBins)
             .groupByKey()
             .map(smoothBunching)
-            .map(a => (s"${a._1._1}_${a._2._1}}", a._2))
+            .map(a => (s"${a._1._1}_${a._1._2}}", a._2)) // ("lat_long", geoSmoothedBunching)
 
         new OutputStreams(new TimeSeriesStreamPartitioned(BusBunching.BUNCHING_TIME_SERIES_NAME,
-            bunchingLevels.mapValues(a => a._1.toTimeRecord)),
-        new TimeSeriesStreamPartitioned(BusBunching.GEO_SMOOTHED_TIME_SERIES_NAME, geoSmoothedBunching.mapValues(a => a._1.toTimeRecord)))
+            bunchingLevels.mapValues(a => a.toTimeRecord)),
+        new TimeSeriesStreamPartitioned(BusBunching.GEO_SMOOTHED_TIME_SERIES_NAME, geoSmoothedBunching.mapValues(a => a.toTimeRecord)))
 
     }
 
     class BusPosition(val time: Long,
-                      val deviceConfig: Option[DeviceConfig],
                       val route: String,
                       val direction: Int,
                       val busId: String,
@@ -91,7 +88,6 @@ class BusBunching() extends SparkApp("BusBunching") {
 
         def this(timeRecord: TimeRecord) = {
             this(timeRecord.time,
-                None,
                 timeRecord.requireString(BusBunching.ROUTE),
                 timeRecord.requireString(BusBunching.DIRECTION).toInt,
                 timeRecord.requireString(BusBunching.BUSID),
@@ -153,15 +149,14 @@ class BusBunching() extends SparkApp("BusBunching") {
     }
 
     // generate a list of cells that are affected by input cell, decided by grid size
-    def dataToMultipleBins(t: (String, (BunchingLevel, DeviceConfig))): List[((Double, Double), (BunchingLevel,
-        DeviceConfig))] = {
-        val (_, (dataSet, conf)) = t
+    def dataToMultipleBins(t: (String, BunchingLevel)): List[((Double, Double), BunchingLevel)] = {
+        val (_, dataSet) = t
 
-        val listBuffer = new ListBuffer[((Double, Double), (BunchingLevel, DeviceConfig))]
+        val listBuffer = new ListBuffer[((Double, Double), BunchingLevel)]
 
         for (cellCoordinates <- getGpsGrid(dataSet.latitude, dataSet.longitude, BusBunching
             .GEO_SMOOTHING_GRID_SIDE)) {
-            listBuffer.append((cellCoordinates, (dataSet, conf)))
+            listBuffer.append((cellCoordinates, dataSet))
         }
 
         listBuffer.toList
@@ -171,38 +166,38 @@ class BusBunching() extends SparkApp("BusBunching") {
         s"$lat|$long"
     }
 
-    def positionsByBus(t: (String, (BusPosition, DeviceConfig))): (String,
-        (BusPosition, DeviceConfig)) = {
-        val (_, (busPosition, conf)) = t
+    def positionsByBus(t: (String, BusPosition)): (String,
+        BusPosition) = {
+        val (_, busPosition) = t
 
-        (busPosition.busId, (busPosition, conf))
+        (busPosition.busId, busPosition)
     }
 
-    def busesToRoutesAndDirection(t: (String, (BusPosition, DeviceConfig))): (String,
-        (BusPosition, DeviceConfig)) = {
-        val (_, (busPosition, conf)) = t
+    def busesToRoutesAndDirection(t: (String, BusPosition)): (String,
+        BusPosition) = {
+        val (_, busPosition) = t
         val route = busPosition.route
         val direction = busPosition.direction
         val key = s"${route}_$direction"
-        (key, (busPosition, conf))
+        (key, busPosition)
     }
 
-    def getRouteBunchingLevel(busPositions: Iterable[(BusPosition, DeviceConfig)]): List[
-        (BunchingLevel, DeviceConfig)] = {
+    def getRouteBunchingLevel(busPositions: Iterable[BusPosition]): List[
+        BunchingLevel] = {
 
         val busPositionsList = busPositions
             .toList
-            .sortWith(_._1.progress < _._1.progress)
+            .sortWith(_.progress < _.progress)
 
-        val listBuffer = ListBuffer[(BunchingLevel, DeviceConfig)]()
+        val listBuffer = ListBuffer[BunchingLevel]()
 
-        val firstBus = busPositionsList.head._1
-        val routeLength = getRouteLength(firstBus.route, firstBus.direction)
+        val firstBus = busPositionsList.head
+        val routeLength = RouteLengths.getRouteLength(firstBus.route)
         val nBuses = busPositionsList.length
 
         for (i <- 0 until busPositionsList.length - 1) {
-            val (busPosition, conf) = busPositionsList(i)
-            val (busBefore, _) = busPositionsList(i + 1)
+            val busPosition = busPositionsList(i)
+            val busBefore = busPositionsList(i + 1)
 
             val distance = busBefore.progress - busPosition.progress
             val bunchingLevelValue = distance / (routeLength / (nBuses + 1))
@@ -210,13 +205,14 @@ class BusBunching() extends SparkApp("BusBunching") {
             val bunchingLevel = new BunchingLevel(busPosition.time, bunchingLevelValue, busPosition
                 .route, busPosition.direction, busPosition.busId, busPosition.latitude, busPosition.longitude)
 
-            listBuffer.append((bunchingLevel, conf))
+            listBuffer.append(bunchingLevel)
         }
+
         listBuffer.toList
     }
 
-    def smoothBunching(t: ((Double, Double), Iterable[(BunchingLevel, DeviceConfig)])):
-    ((Double, Double), (GeoSmoothedBunching, DeviceConfig)) = {
+    def smoothBunching(t: ((Double, Double), Iterable[BunchingLevel])):
+    ((Double, Double), GeoSmoothedBunching) = {
         val ((latBin, lonBin), pointList) = t
 
         if (pointList.isEmpty) {
@@ -232,7 +228,7 @@ class BusBunching() extends SparkApp("BusBunching") {
 
         var timeSum = 0L
 
-        for ((dataSet, conf) <- pointList) {
+        for (dataSet <- pointList) {
             val bunchingLevel = dataSet.asInstanceOf[BunchingLevel]
             val otherLat = bunchingLevel.latitude
             val otherLong = bunchingLevel.longitude
@@ -254,22 +250,22 @@ class BusBunching() extends SparkApp("BusBunching") {
                     latBin,
                     lonBin)
 
-                return ((latBin, lonBin), (geoSmoothedBunching, conf))
+                return ((latBin, lonBin), geoSmoothedBunching)
             }
 
             nominator += bunchingLevel.value / Math.pow(dist, POWER)
             denominator += 1 / Math.pow(dist, POWER)
         }
 
-        val (dataSet, conf) = pointList.head
-        val bunchingLevelpLevel = dataSet.asInstanceOf[BunchingLevel]
-        val geoSmoothedBunching = new GeoSmoothedBunching(bunchingLevelpLevel.time,
+        val dataSet = pointList.head
+        val bunchingLevel = dataSet.asInstanceOf[BunchingLevel]
+        val geoSmoothedBunching = new GeoSmoothedBunching(bunchingLevel.time,
             nominator / denominator,
-            bunchingLevelpLevel.route,
-            bunchingLevelpLevel.direction,
+            bunchingLevel.route,
+            bunchingLevel.direction,
             latBin,
             lonBin)
 
-        ((latBin, lonBin), (geoSmoothedBunching, conf))
+        ((latBin, lonBin), geoSmoothedBunching)
     }
 }

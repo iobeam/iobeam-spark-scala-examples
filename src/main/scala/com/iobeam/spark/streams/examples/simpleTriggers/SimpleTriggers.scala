@@ -1,19 +1,18 @@
 package com.iobeam.spark.streams.examples.simpletriggers
 
-import com.iobeam.spark.streams.config.DeviceConfig
 import com.iobeam.spark.streams.model.{TriggerStream, TriggerEvent, OutputStreams, TimeRecord}
-import com.iobeam.spark.streams.{SparkApp, AppRunner}
-import org.apache.spark.streaming.dstream.DStream
+import com.iobeam.spark.streams.{IobeamInterface, SparkApp}
 
 /**
  * Trigger example
  */
 class SimpleTriggers extends SparkApp("SimpleApp") {
-  override def processStream(stream: DStream[(String, (TimeRecord, DeviceConfig))]):
+  override def processStream(iobeamInterface: IobeamInterface):
   OutputStreams = {
+    val stream = iobeamInterface.getInputStreamBySource
     val filteredStream = stream
       //get rid of the config
-      .map { case (devId, (data, config)) => (devId, data) }
+      .map { case (devId, data) => (devId, data) }
 
       //filter on events that have low battery
       .filter {
