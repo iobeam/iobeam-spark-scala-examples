@@ -1,10 +1,8 @@
 package com.iobeam.spark.streams.examples.breathenyc
 
-import com.iobeam.spark.streams.SparkApp
-import com.iobeam.spark.streams.config.{DeviceConfig, SeriesConfig}
+import com.iobeam.spark.streams.{IobeamInterface, SparkApp}
 import com.iobeam.spark.streams.model.{OutputStreams, TimeRecord, TimeSeriesStreamPartitioned}
 import org.apache.spark.streaming.Duration
-import org.apache.spark.streaming.dstream.DStream
 
 import scala.collection.mutable.ListBuffer
 
@@ -35,12 +33,12 @@ object BreatheNyc {
     val IDEAL_HUMIDITY = 50.0
 }
 
-class BreatheNyc() extends SparkApp("BreatheNYC") {
+class BreatheNyc(iobeamInterface: IobeamInterface) extends SparkApp("BreatheNYC") {
 
-    override def processStream(stream: DStream[(String, (TimeRecord, DeviceConfig))]):
+    override def processStream(iobeamInterface: IobeamInterface):
     OutputStreams = {
-
-        val s = stream.mapValues(a => new SensorReadings(a._1, a._2))
+        val stream = iobeamInterface.getInputStreamBySource
+        val s = stream.mapValues(a => new SensorReadings(a))
         // Streams of data arrive belonging to individual devices (buses).
         // We first map the sensors to the geo-region in which they belong (e.g., 11m^2 region)
         // For each geo-region, we then split the geo-region by into 15min sliding windows
@@ -54,8 +52,7 @@ class BreatheNyc() extends SparkApp("BreatheNYC") {
                 a.toList.map(_.latitude).sum / a.size.toDouble,
                 a.toList.map(_.longitude).sum / a.size.toDouble,
                 a.toList.map(_.temperature).sum / a.size.toDouble,
-                a.toList.map(_.humidity).sum / a.size.toDouble,
-                a.head.deviceConfig))
+                a.toList.map(_.humidity).sum / a.size.toDouble))
 
         val mergedComforts = means.mapValues(a => new ComfortLevel(a))
 
@@ -73,16 +70,14 @@ class BreatheNyc() extends SparkApp("BreatheNYC") {
                          val latitude: Double,
                          val longitude: Double,
                          val temperature: Double,
-                         val humidity: Double,
-                         val deviceConfig: DeviceConfig) extends Serializable {
+                         val humidity: Double) extends Serializable {
 
-        def this(timeRecord: TimeRecord, deviceConfig: DeviceConfig) {
+        def this(timeRecord: TimeRecord) {
             this(timeRecord.time,
                 timeRecord.requireDouble(BreatheNyc.LATITUDE),
                 timeRecord.requireDouble(BreatheNyc.LONGITUDE),
                 timeRecord.requireDouble(BreatheNyc.TEMPERATURE),
-                timeRecord.requireDouble(BreatheNyc.HUMIDITY),
-                deviceConfig)
+                timeRecord.requireDouble(BreatheNyc.HUMIDITY))
         }
     }
 
@@ -111,8 +106,7 @@ class BreatheNyc() extends SparkApp("BreatheNYC") {
                        val temperature: Double,
                        val humidity: Double,
                        val latitude: Double,
-                       val longitude: Double,
-                       val deviceConfig: DeviceConfig) extends Serializable {
+                       val longitude: Double) extends Serializable {
 
         def this(computation: SensorReadings) {
             this(computation.time,
@@ -120,8 +114,7 @@ class BreatheNyc() extends SparkApp("BreatheNYC") {
                 computation.temperature,
                 computation.humidity,
                 computation.latitude,
-                computation.longitude,
-                computation.deviceConfig)
+                computation.longitude)
         }
     }
 
@@ -135,38 +128,6 @@ class BreatheNyc() extends SparkApp("BreatheNYC") {
         def toDataSet: TimeRecord = new TimeRecord(time, data)
 
         def getData: Map[TimeRecord.Key, Double] = data.asInstanceOf[Map[TimeRecord.Key, Double]]
-    }
-
-    override def getInitialConfigs: Seq[SeriesConfig] = {
-        Seq(new SeriesConfig("*", "temp", Map("threshold" -> 60.0)))
-    }
-
-    def isTrigger(posAndValue: ((Double, Double), ComfortLevel)): Boolean = {
-
-        val (_, comfortLevel) = posAndValue
-
-        println(s"checking triggers for data $posAndValue")
-
-        try {
-            val thresholdOption = comfortLevel.deviceConfig.get(BreatheNyc.TEMPERATURE, "threshold")
-
-            thresholdOption match {
-                case Some(threshold) =>
-                    if (comfortLevel.temperature > threshold.asInstanceOf[Double]) {
-                        println(s"Over threshold $threshold")
-                        return true
-                    }
-                case None =>
-                    println("No threshold config for time series " + BreatheNyc.TEMPERATURE)
-            }
-
-        } catch {
-            case e: NoSuchElementException =>
-                println("No configuration found for a calculated score: " + e)
-            case e: ClassCastException =>
-                println("Unexpected value type: " + e)
-        }
-        false
     }
 
     def getBinnedGpsCoordinate(latOrLong: Double): Double = {
