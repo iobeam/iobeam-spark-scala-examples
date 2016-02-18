@@ -1,8 +1,8 @@
 package com.iobeam.spark.streams
 
-import com.iobeam.spark.streams.examples.busbunching.BusBunching
+import com.iobeam.spark.streams.examples.simple.Simple
 
 /**
-  * Makes bus bunching the default app in the examples jar
+  * Makes Simple the default app in the examples jar
   */
-class StreamProcessor() extends BusBunching()
+class StreamProcessor() extends Simple()
