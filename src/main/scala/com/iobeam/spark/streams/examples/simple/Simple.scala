@@ -1,6 +1,7 @@
 package com.iobeam.spark.streams.examples.simple
 
-import com.iobeam.spark.streams.model.{TimeSeriesStreamSimple, TimeRecord, OutputStreams}
+import com.iobeam.spark.streams.model.{TimeSeriesStreamPartitioned, TimeRecord,
+OutputStreams}
 import com.iobeam.spark.streams.{IobeamInterface, SparkApp}
 
 object Simple {
@@ -13,8 +14,8 @@ object Simple {
 class Simple extends SparkApp("SimpleApp") {
   override def processStream(iobeamInterface: IobeamInterface):
   OutputStreams = {
-    val stream = iobeamInterface.getInputStreamRecords
-    val derivedStream = stream.map {
+    val stream = iobeamInterface.getInputStreamBySource
+    val derivedStream = stream.mapValues {
       ds: TimeRecord => {
         val oldValue = ds.requireDouble("value")
         val data = Map[String, Any]("value" -> (oldValue + 10))
@@ -22,6 +23,6 @@ class Simple extends SparkApp("SimpleApp") {
       }
     }
 
-    new OutputStreams(new TimeSeriesStreamSimple(Simple.SERIES_NAME, derivedStream))
+    new OutputStreams(new TimeSeriesStreamPartitioned(derivedStream))
   }
 }
