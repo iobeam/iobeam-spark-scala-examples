@@ -11,9 +11,6 @@ class SimpleTriggers extends SparkApp("SimpleApp") {
   OutputStreams = {
     val stream = iobeamInterface.getInputStreamBySource
     val filteredStream = stream
-      //get rid of the config
-      .map { case (devId, data) => (devId, data) }
-
       //filter on events that have low battery
       .filter {
       case (devId, data) =>
