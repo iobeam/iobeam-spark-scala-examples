@@ -1,9 +1,9 @@
 # iobeam spark examples
 
-This repository contains examples of iobeam spark applications [The full
-reference API can be
-found here](http://docs.iobeam.com/lib/analyze/#com.iobeam.spark.streams.package).
+This repository contains examples of iobeam Spark applications. 
 
+[More information on creating an iobeam Spark app can be found
+here.](https://github.com/iobeam/iobeam-spark-scala-maven-archetype).
 
 ## Simple
 
