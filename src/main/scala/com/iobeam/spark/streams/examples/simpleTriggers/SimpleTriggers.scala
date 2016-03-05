@@ -2,10 +2,12 @@ package com.iobeam.spark.streams.examples.simpletriggers
 
 import com.iobeam.spark.streams.model.{TriggerStream, TriggerEvent, OutputStreams, TimeRecord}
 import com.iobeam.spark.streams.{IobeamInterface, SparkApp}
+import com.iobeam.spark.streams.annotation.SparkRun
 
 /**
  * Trigger example
  */
+@SparkRun("SimpleTriggers")
 class SimpleTriggers extends SparkApp("SimpleApp") {
   override def processStream(iobeamInterface: IobeamInterface):
   OutputStreams = {
@@ -19,7 +21,7 @@ class SimpleTriggers extends SparkApp("SimpleApp") {
           case Some(battery) => battery < 0.60
           case None => false
         }
-    }
+      }
 
     //create trigger event object.
     val triggerStream = filteredStream.map { case (devId, data) =>
