@@ -111,13 +111,14 @@
         <dependency>
             <groupId>com.iobeam</groupId>
             <artifactId>iobeam-spark-scala</artifactId>
-            <version>0.3</version>
+            <version>${iobeam.spark.scala.version}</version>
         </dependency>
     </dependencies>
 
     <properties>
         <maven.compiler.target>1.8</maven.compiler.target>
         <maven.compiler.source>1.8</maven.compiler.source>
+        <iobeam.spark.scala.version>0.4</iobeam.spark.scala.version>
     </properties>
 
 </project>
