@@ -1,17 +1,17 @@
 package com.iobeam.spark.streams.examples.simpletriggers
 
-import com.iobeam.spark.streams.model.{TriggerStream, TriggerEvent, OutputStreams, TimeRecord}
-import com.iobeam.spark.streams.{IobeamInterface, SparkApp}
+import com.iobeam.spark.streams.model.{TriggerEvent, OutputStreams, TimeRecord}
+import com.iobeam.spark.streams.{AppContext,SparkApp}
 import com.iobeam.spark.streams.annotation.SparkRun
 
 /**
  * Trigger example
  */
 @SparkRun("SimpleTriggers")
-class SimpleTriggers extends SparkApp("SimpleApp") {
-  override def processStream(iobeamInterface: IobeamInterface):
+object  SimpleTriggers extends SparkApp {
+  override def main(appContext: AppContext):
   OutputStreams = {
-    val stream = iobeamInterface.getInputStreamBySource
+    val stream = appContext.getInputStream
     val filteredStream = stream
       //filter on events that have low battery
       .filter {
@@ -32,6 +32,6 @@ class SimpleTriggers extends SparkApp("SimpleApp") {
       TriggerEvent("batteryLow", new TimeRecord(data.time, triggerData))
     }
 
-    new OutputStreams(TriggerStream(triggerStream))
+    OutputStreams(triggerStream)
   }
 }
